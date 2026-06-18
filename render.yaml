@@ -1,17 +1,13 @@
 # queue-agents (Pattern 2): thin web producer + background worker over a Valkey
-# queue, with Postgres for telemetry. All plans set to free for a zero-cost deploy.
-# Builds from the repo root so the npm workspaces resolve.
-# (If Render rejects a free worker at apply time, change queue-agents-worker's
-#  plan to "starter" — that requires a card on the workspace.)
+# queue. Render allows only ONE free Postgres per workspace, and Pattern 1's
+# naive-agent-db already uses it — so this blueprint does NOT create a database.
+# Instead, set DATABASE_URL (sync:false) on BOTH services to the naive-agent-db
+# *Internal* Connection String, so the queue shares the same telemetry tables
+# (reviews/findings/spans, created IF NOT EXISTS). KeyValue is free and separate.
 projects:
   - name: agents-workshop-queue
     environments:
       - name: production
-        databases:
-          - name: queue-agents-db
-            plan: free
-            region: oregon
-            postgresMajorVersion: "18"
         services:
           - type: keyvalue
             name: queue-agents-valkey
@@ -29,7 +25,7 @@ projects:
             healthCheckPath: /healthz
             envVars:
               - key: DATABASE_URL
-                fromDatabase: { name: queue-agents-db, property: connectionString }
+                sync: false
               - key: VALKEY_URL
                 fromService: { name: queue-agents-valkey, type: keyvalue, property: connectionString }
               - key: NODE_ENV
@@ -44,7 +40,7 @@ projects:
             startCommand: npm run start:worker --workspace @workshop/queue-agents
             envVars:
               - key: DATABASE_URL
-                fromDatabase: { name: queue-agents-db, property: connectionString }
+                sync: false
               - key: VALKEY_URL
                 fromService: { name: queue-agents-valkey, type: keyvalue, property: connectionString }
               - key: NODE_ENV
