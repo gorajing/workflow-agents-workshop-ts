@@ -1,27 +1,51 @@
-# naive-agent (Pattern 1), patched to FREE plans for a zero-cost demo deploy.
+# queue-agents (Pattern 2): thin web producer + background worker over a Valkey
+# queue, with Postgres for telemetry. All plans set to free for a zero-cost deploy.
 # Builds from the repo root so the npm workspaces resolve.
+# (If Render rejects a free worker at apply time, change queue-agents-worker's
+#  plan to "starter" — that requires a card on the workspace.)
 projects:
-  - name: agents-workshop-naive
+  - name: agents-workshop-queue
     environments:
       - name: production
         databases:
-          - name: naive-agent-db
+          - name: queue-agents-db
             plan: free
             region: oregon
             postgresMajorVersion: "18"
         services:
+          - type: keyvalue
+            name: queue-agents-valkey
+            plan: free
+            region: oregon
+            maxmemoryPolicy: noeviction
+            ipAllowList: []
           - type: web
-            name: naive-agent
+            name: queue-agents-web
             runtime: node
             region: oregon
             plan: free
             buildCommand: npm ci
-            startCommand: npm run start --workspace @workshop/naive-agent
+            startCommand: npm run start --workspace @workshop/queue-agents
             healthCheckPath: /healthz
             envVars:
               - key: DATABASE_URL
-                fromDatabase:
-                  name: naive-agent-db
-                  property: connectionString
+                fromDatabase: { name: queue-agents-db, property: connectionString }
+              - key: VALKEY_URL
+                fromService: { name: queue-agents-valkey, type: keyvalue, property: connectionString }
+              - key: NODE_ENV
+                value: production
+          - type: worker
+            name: queue-agents-worker
+            runtime: node
+            region: oregon
+            plan: free
+            numInstances: 1
+            buildCommand: npm ci
+            startCommand: npm run start:worker --workspace @workshop/queue-agents
+            envVars:
+              - key: DATABASE_URL
+                fromDatabase: { name: queue-agents-db, property: connectionString }
+              - key: VALKEY_URL
+                fromService: { name: queue-agents-valkey, type: keyvalue, property: connectionString }
               - key: NODE_ENV
                 value: production
