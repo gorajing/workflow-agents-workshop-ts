@@ -1,17 +1,21 @@
 # queue-agents (Pattern 2): thin web producer + background worker over a Valkey
-# queue. Render allows only ONE free Postgres per workspace, and Pattern 1's
-# naive-agent-db already uses it — so this blueprint does NOT create a database.
-# Instead, set DATABASE_URL (sync:false) on BOTH services to the naive-agent-db
-# *Internal* Connection String, so the queue shares the same telemetry tables
-# (reviews/findings/spans, created IF NOT EXISTS). KeyValue is free and separate.
+# queue, with its own Postgres. Valkey is kept at "starter" to match the already-
+# provisioned instance (Render can't downgrade a running Key Value to free). The
+# database is "basic-256mb" (paid) so it doesn't collide with the one free Postgres
+# per workspace that Pattern 1 already uses. Web + worker stay free.
 projects:
   - name: agents-workshop-queue
     environments:
       - name: production
+        databases:
+          - name: queue-agents-db
+            plan: basic-256mb
+            region: oregon
+            postgresMajorVersion: "18"
         services:
           - type: keyvalue
             name: queue-agents-valkey
-            plan: free
+            plan: starter
             region: oregon
             maxmemoryPolicy: noeviction
             ipAllowList: []
@@ -25,7 +29,7 @@ projects:
             healthCheckPath: /healthz
             envVars:
               - key: DATABASE_URL
-                sync: false
+                fromDatabase: { name: queue-agents-db, property: connectionString }
               - key: VALKEY_URL
                 fromService: { name: queue-agents-valkey, type: keyvalue, property: connectionString }
               - key: NODE_ENV
@@ -40,7 +44,7 @@ projects:
             startCommand: npm run start:worker --workspace @workshop/queue-agents
             envVars:
               - key: DATABASE_URL
-                sync: false
+                fromDatabase: { name: queue-agents-db, property: connectionString }
               - key: VALKEY_URL
                 fromService: { name: queue-agents-valkey, type: keyvalue, property: connectionString }
               - key: NODE_ENV
